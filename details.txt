@@ -1,0 +1,11 @@
+Purpose of this assignment is to get familiar with Operating System functions.
+In this project students are expected to choose and implement one of the following Operating Systems
+function.
+1. Task 01: For a given set of tasks (should be given as the input for your system), you are
+requested to implement all the following scheduling algorithms and select the best one for that
+situation.
+• First Come First Served (FCFS)
+• Round Robin
+• Shortest Process Next
+• Shortest Remaining Time Next
+• Priority Scheduling
