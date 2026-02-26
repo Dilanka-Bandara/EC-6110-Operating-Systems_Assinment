@@ -20,15 +20,21 @@ def calculate_fcfs(processes):
     procs = copy.deepcopy(processes)
     procs.sort(key=lambda x: x.arrival_time)
     current_time = 0
+    timeline = []
+    
     for p in procs:
         if current_time < p.arrival_time:
+            timeline.append(("IDLE", current_time, p.arrival_time))
             current_time = p.arrival_time
+            
+        timeline.append((p.pid, current_time, current_time + p.burst_time))
         p.start_time = current_time
         p.completion_time = current_time + p.burst_time
         p.turnaround_time = p.completion_time - p.arrival_time
         p.waiting_time = p.turnaround_time - p.burst_time
         current_time = p.completion_time
-    return procs
+        
+    return procs, timeline
 
 def calculate_round_robin(processes, quantum):
     procs = copy.deepcopy(processes)
@@ -37,6 +43,7 @@ def calculate_round_robin(processes, quantum):
     ready_queue = []
     current_time = 0
     completed = 0
+    timeline = []
     i = 0
     
     while i < n and procs[i].arrival_time <= current_time:
@@ -46,6 +53,8 @@ def calculate_round_robin(processes, quantum):
     while completed < n:
         if not ready_queue:
             if i < n:
+                if current_time < procs[i].arrival_time:
+                    timeline.append(("IDLE", current_time, procs[i].arrival_time))
                 current_time = procs[i].arrival_time
                 ready_queue.append(procs[i])
                 i += 1
@@ -58,6 +67,8 @@ def calculate_round_robin(processes, quantum):
             p.start_time = current_time
             
         execute_time = min(quantum, p.remaining_time)
+        timeline.append((p.pid, current_time, current_time + execute_time))
+        
         current_time += execute_time
         p.remaining_time -= execute_time
         
@@ -72,7 +83,8 @@ def calculate_round_robin(processes, quantum):
             p.completion_time = current_time
             p.turnaround_time = p.completion_time - p.arrival_time
             p.waiting_time = p.turnaround_time - p.burst_time
-    return procs
+            
+    return procs, timeline
 
 def calculate_spn(processes):
     procs = copy.deepcopy(processes)
@@ -81,6 +93,7 @@ def calculate_spn(processes):
     completed = 0
     is_completed = [False] * n
     results = []
+    timeline = []
     
     while completed < n:
         idx = -1
@@ -93,8 +106,10 @@ def calculate_spn(processes):
                 elif procs[i].burst_time == min_bt:
                     if procs[i].arrival_time < procs[idx].arrival_time:
                         idx = i
+                        
         if idx != -1:
             p = procs[idx]
+            timeline.append((p.pid, current_time, current_time + p.burst_time))
             p.start_time = current_time
             p.completion_time = current_time + p.burst_time
             p.turnaround_time = p.completion_time - p.arrival_time
@@ -104,15 +119,23 @@ def calculate_spn(processes):
             completed += 1
             results.append(p)
         else:
+            # Handle idle time
+            if timeline and timeline[-1][0] == "IDLE":
+                timeline[-1] = ("IDLE", timeline[-1][1], current_time + 1)
+            else:
+                timeline.append(("IDLE", current_time, current_time + 1))
             current_time += 1
-    return results
+            
+    return results, timeline
 
 def calculate_srt(processes):
     procs = copy.deepcopy(processes)
     n = len(procs)
     current_time = 0
     completed = 0
+    execution_ticks = []
     
+    # Tick-by-tick simulation for preemptive accuracy
     while completed < n:
         shortest = -1
         min_rem_time = float('inf')
@@ -124,20 +147,38 @@ def calculate_srt(processes):
                 elif procs[i].remaining_time == min_rem_time:
                     if procs[i].arrival_time < procs[shortest].arrival_time:
                         shortest = i
+                        
         if shortest != -1:
             p = procs[shortest]
             if p.start_time == -1:
                 p.start_time = current_time
+            execution_ticks.append((current_time, p.pid))
             p.remaining_time -= 1
             current_time += 1
+            
             if p.remaining_time == 0:
                 completed += 1
                 p.completion_time = current_time
                 p.turnaround_time = p.completion_time - p.arrival_time
                 p.waiting_time = p.turnaround_time - p.burst_time
         else:
+            execution_ticks.append((current_time, "IDLE"))
             current_time += 1
-    return procs
+            
+    # Compress ticks into a timeline
+    timeline = []
+    if execution_ticks:
+        curr_pid = execution_ticks[0][1]
+        start_t = execution_ticks[0][0]
+        for i in range(1, len(execution_ticks)):
+            t, pid = execution_ticks[i]
+            if pid != curr_pid:
+                timeline.append((curr_pid, start_t, t))
+                curr_pid = pid
+                start_t = t
+        timeline.append((curr_pid, start_t, execution_ticks[-1][0] + 1))
+        
+    return procs, timeline
 
 def calculate_priority(processes):
     procs = copy.deepcopy(processes)
@@ -146,6 +187,7 @@ def calculate_priority(processes):
     completed = 0
     is_completed = [False] * n
     results = []
+    timeline = []
     
     while completed < n:
         idx = -1
@@ -158,8 +200,10 @@ def calculate_priority(processes):
                 elif procs[i].priority == best_prio:
                     if procs[i].arrival_time < procs[idx].arrival_time:
                         idx = i
+                        
         if idx != -1:
             p = procs[idx]
+            timeline.append((p.pid, current_time, current_time + p.burst_time))
             p.start_time = current_time
             p.completion_time = current_time + p.burst_time
             p.turnaround_time = p.completion_time - p.arrival_time
@@ -169,8 +213,13 @@ def calculate_priority(processes):
             completed += 1
             results.append(p)
         else:
+            if timeline and timeline[-1][0] == "IDLE":
+                timeline[-1] = ("IDLE", timeline[-1][1], current_time + 1)
+            else:
+                timeline.append(("IDLE", current_time, current_time + 1))
             current_time += 1
-    return results
+            
+    return results, timeline
 
 
 # --- GUI Application ---
@@ -181,9 +230,8 @@ ctk.set_default_color_theme("blue")
 class SchedulerApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        
         self.title("CPU Scheduling Analyzer - OS Project")
-        self.geometry("900x650")
+        self.geometry("950x700")
         self.processes = []
         self.process_count = 1
         
@@ -225,7 +273,6 @@ class SchedulerApp(ctk.CTk):
         self.main_frame.grid_columnconfigure(0, weight=1)
         self.main_frame.grid_rowconfigure(3, weight=1)
         
-        # Controls Section
         control_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         control_frame.grid(row=0, column=0, sticky="ew")
         
@@ -235,13 +282,12 @@ class SchedulerApp(ctk.CTk):
                                                values=["Compare All (Find Best)", "FCFS", "Round Robin", "SPN", "SRT", "Priority"])
         self.algo_dropdown.grid(row=0, column=1, padx=10, pady=10)
         
-        self.quantum_entry = ctk.CTkEntry(control_frame, placeholder_text="Time Quantum (for RR)", width=150)
+        self.quantum_entry = ctk.CTkEntry(control_frame, placeholder_text="Time Quantum", width=120)
         self.quantum_entry.grid(row=0, column=2, padx=10, pady=10)
         
         self.run_btn = ctk.CTkButton(control_frame, text="Run Simulation", command=self.run_simulation, fg_color="#2E8B57", hover_color="#226B43")
         self.run_btn.grid(row=0, column=3, padx=10, pady=10)
 
-        # Output Section
         self.output_display = ctk.CTkTextbox(self.main_frame, font=ctk.CTkFont(family="Courier", size=14))
         self.output_display.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
         self.output_display.insert("0.0", "Welcome to the CPU Scheduling Analyzer.\nAdd processes on the left, then click 'Run Simulation'.\n")
@@ -257,15 +303,12 @@ class SchedulerApp(ctk.CTk):
             self.processes.append(Process(pid, at, bt, prio))
             self.process_count += 1
             
-            # Update display
             self.queue_display.insert("end", f"{pid}: AT={at}, BT={bt}, Prio={prio}\n")
-            
-            # Clear inputs
             self.arrival_entry.delete(0, "end")
             self.burst_entry.delete(0, "end")
             self.priority_entry.delete(0, "end")
         except ValueError:
-            messagebox.showerror("Input Error", "Please enter valid integer numbers for Arrival and Burst times.")
+            messagebox.showerror("Input Error", "Please enter valid integer numbers.")
 
     def clear_processes(self):
         self.processes = []
@@ -274,12 +317,39 @@ class SchedulerApp(ctk.CTk):
         self.output_display.delete("0.0", "end")
         self.output_display.insert("0.0", "Process queue cleared.\n")
 
-    def format_results(self, title, results):
+    def generate_gantt_chart(self, timeline):
+        if not timeline:
+            return "No timeline available.\n"
+            
+        # Merge adjacent identical PIDs (happens frequently in Round Robin)
+        merged_timeline = []
+        for item in timeline:
+            if merged_timeline and merged_timeline[-1][0] == item[0]:
+                merged_timeline[-1] = (merged_timeline[-1][0], merged_timeline[-1][1], item[2])
+            else:
+                merged_timeline.append(item)
+                
+        chart = "\n--- Gantt Chart (Execution Timeline) ---\n\n"
+        bars = ""
+        times = f"{merged_timeline[0][1]:<2}"
+        
+        for pid, start, end in merged_timeline:
+            duration = end - start
+            width = max(6, min(duration * 2, 12)) # Scale width for visuals
+            
+            bars += f"|{str(pid).center(width)}"
+            times += f"{end:>{width+1}}"
+            
+        bars += "|\n"
+        chart += bars + times + "\n\n"
+        return chart
+
+    def format_results(self, title, results, timeline):
         results.sort(key=lambda x: int(x.pid[1:]))
         out = f"\n{title}\n"
-        out += "-"*65 + "\n"
+        out += "-"*70 + "\n"
         out += f"{'PID':<6} | {'Arrival':<8} | {'Burst':<6} | {'Finish':<8} | {'Turnaround':<12} | {'Waiting':<8}\n"
-        out += "-"*65 + "\n"
+        out += "-"*70 + "\n"
         
         t_wt = 0
         t_tat = 0
@@ -291,10 +361,13 @@ class SchedulerApp(ctk.CTk):
         avg_wt = t_wt / len(results)
         avg_tat = t_tat / len(results)
         
-        out += "-"*65 + "\n"
+        out += "-"*70 + "\n"
         out += f"Average Waiting Time:    {avg_wt:.2f}\n"
         out += f"Average Turnaround Time: {avg_tat:.2f}\n"
-        return out, avg_wt
+        
+        # Append the new Gantt chart
+        out += self.generate_gantt_chart(timeline)
+        return out
 
     def run_simulation(self):
         if not self.processes:
@@ -308,18 +381,19 @@ class SchedulerApp(ctk.CTk):
             q_str = self.quantum_entry.get()
             quantum = int(q_str) if q_str else 2
             
-            res_fcfs = calculate_fcfs(self.processes)
-            res_rr = calculate_round_robin(self.processes, quantum)
-            res_spn = calculate_spn(self.processes)
-            res_srt = calculate_srt(self.processes)
-            res_prio = calculate_priority(self.processes)
+            res_fcfs, _ = calculate_fcfs(self.processes)
+            res_rr, _ = calculate_round_robin(self.processes, quantum)
+            res_spn, _ = calculate_spn(self.processes)
+            res_srt, _ = calculate_srt(self.processes)
+            res_prio, _ = calculate_priority(self.processes)
             
-            stats = []
-            stats.append(("FCFS", sum(p.waiting_time for p in res_fcfs) / len(res_fcfs)))
-            stats.append((f"Round Robin (Q={quantum})", sum(p.waiting_time for p in res_rr) / len(res_rr)))
-            stats.append(("SPN", sum(p.waiting_time for p in res_spn) / len(res_spn)))
-            stats.append(("SRT", sum(p.waiting_time for p in res_srt) / len(res_srt)))
-            stats.append(("Priority", sum(p.waiting_time for p in res_prio) / len(res_prio)))
+            stats = [
+                ("FCFS", sum(p.waiting_time for p in res_fcfs) / len(res_fcfs)),
+                (f"Round Robin (Q={quantum})", sum(p.waiting_time for p in res_rr) / len(res_rr)),
+                ("SPN", sum(p.waiting_time for p in res_spn) / len(res_spn)),
+                ("SRT", sum(p.waiting_time for p in res_srt) / len(res_srt)),
+                ("Priority", sum(p.waiting_time for p in res_prio) / len(res_prio))
+            ]
             
             out = "=== ALGORITHM COMPARISON ===\n"
             out += f"{'Algorithm':<25} | {'Avg Waiting Time':<15}\n"
@@ -333,28 +407,33 @@ class SchedulerApp(ctk.CTk):
                     
             out += "\n" + "="*45 + "\n"
             out += f"🏆 BEST ALGORITHM: {best_algo[0]} \n🏆 LOWEST AVG WAITING TIME: {best_algo[1]:.2f}\n"
-            out += "="*45 + "\n\n"
-            
+            out += "="*45 + "\n"
+            out += "\n(Tip: Run a specific algorithm from the dropdown to see its Timeline/Gantt chart.)\n"
             self.output_display.insert("end", out)
             
         else:
             if algo == "FCFS":
-                res, _ = self.format_results("=== FCFS (First Come First Served) ===", calculate_fcfs(self.processes))
+                procs, timeline = calculate_fcfs(self.processes)
+                out = self.format_results("=== FCFS (First Come First Served) ===", procs, timeline)
             elif algo == "Round Robin":
                 try:
                     q = int(self.quantum_entry.get())
                 except ValueError:
                     messagebox.showerror("Error", "Please enter a valid integer for Time Quantum.")
                     return
-                res, _ = self.format_results(f"=== Round Robin (Quantum = {q}) ===", calculate_round_robin(self.processes, q))
+                procs, timeline = calculate_round_robin(self.processes, q)
+                out = self.format_results(f"=== Round Robin (Quantum = {q}) ===", procs, timeline)
             elif algo == "SPN":
-                res, _ = self.format_results("=== SPN (Shortest Process Next) ===", calculate_spn(self.processes))
+                procs, timeline = calculate_spn(self.processes)
+                out = self.format_results("=== SPN (Shortest Process Next) ===", procs, timeline)
             elif algo == "SRT":
-                res, _ = self.format_results("=== SRT (Shortest Remaining Time) ===", calculate_srt(self.processes))
+                procs, timeline = calculate_srt(self.processes)
+                out = self.format_results("=== SRT (Shortest Remaining Time) ===", procs, timeline)
             elif algo == "Priority":
-                res, _ = self.format_results("=== Priority Scheduling ===", calculate_priority(self.processes))
+                procs, timeline = calculate_priority(self.processes)
+                out = self.format_results("=== Priority Scheduling ===", procs, timeline)
                 
-            self.output_display.insert("end", res)
+            self.output_display.insert("end", out)
 
 if __name__ == "__main__":
     app = SchedulerApp()
