@@ -43,7 +43,7 @@ PROCESS_COLORS = [
 ]
 
 BG_DARK   = "#12121f"
-BG_PANEL  = "#1c1c30"
+BG_PANEL  = "#1c1c30"   
 BG_CARD   = "#25254a"
 ACCENT    = "#e94560"
 ACCENT2   = "#533483"
